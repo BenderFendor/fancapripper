@@ -3,7 +3,7 @@ use tokio;
 use scraper::{Html, Selector};
 use futures::{stream, StreamExt};
 use tokio::fs::File;
-use std::{fs, io::Write};
+use std::fs;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashSet;
 use tokio::io::AsyncWriteExt;
