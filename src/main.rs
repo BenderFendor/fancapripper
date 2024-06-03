@@ -1,30 +1,37 @@
 use reqwest::{header::USER_AGENT, Client};
 use tokio;
-use scraper::{Element, Html, Selector};
-use futures::stream::StreamExt;
+use scraper::{Html, Selector};
+use futures::{stream, StreamExt};
+use tokio::fs::File;
 use std::{fs, io::Write};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::HashSet;
+use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() {
     let url: &str = "https://fancaps.net/movies/MovieImages.php?name=Howl_s_Moving_Castle&movieid=220";
-    let maxpage: i32 = 5;
-    let maxnumber = match getpages(url, maxpage).await {
-        Ok(number) => number,
-        Err(_) => {
-            // Handle the error case here, if needed
-            return;
+    let max_page: i32 = 500; // This should be replaced with actual logic to determine the maximum page number
+
+    match get_max_page(url, max_page).await {
+        Ok(max_page) => {
+            if let Err(e) = rippage(url, max_page).await {
+                eprintln!("Error ripping pages: {:?}", e);
+            }
         }
-    };
+        Err(e) => {
+            eprintln!("Error getting max page: {:?}", e);
+        }
+    }
 }
-async fn getpages(url: &str, maxpage: i32) -> Result<i32, &'static str> {
-    Box::pin(async move {
-        let client = reqwest::Client::new();
 
-        let mut max_page = maxpage;
+async fn get_max_page(url: &str, initial_max_page: i32) -> Result<i32, &'static str> {
+    let client = reqwest::Client::new();
+    let mut max_page = initial_max_page;
 
+    loop {
         let page_url = format!("{}&page={}", url, max_page);
-
-        println!("Page url is {}",page_url);
+        println!("Page url is {}", page_url);
 
         let response = client
             .get(&page_url)
@@ -34,92 +41,58 @@ async fn getpages(url: &str, maxpage: i32) -> Result<i32, &'static str> {
 
         match response {
             Ok(res) => {
-                let html_content = res.text().await.unwrap();
-
+                let html_content = res.text().await.map_err(|_| "Failed to read response text")?;
                 let document = Html::parse_document(&html_content);
-                let pagination_select = Selector::parse("ul.pagination li:not(:first-child):not(:last-child) a").unwrap();
-                
+                let pagination_select = Selector::parse("ul.pagination li:not(:first-child):not(:last-child) a").map_err(|_| "Invalid selector")?;
+
                 let elements: Vec<_> = document.select(&pagination_select).collect();
-                let elementclone = elements.clone();
-                'outer: for element in elements {
-                    let page_text = element.text().collect::<String>().trim().to_string();
-                    match page_text.parse::<i32>() {
-                        Ok(page_number) => {
-                            if page_number > max_page {
-                            
-                    
-                                max_page = page_number;
-                                println!("The max page is {}", max_page);
-                                if let Err(e) = getpages(url, max_page).await {
-                                    if e == "Done" {
-                                        // If the error is "Done", return it immediately
-                                        return Err("Done");
-                                    }
-                                }
-                                getpages(url, max_page).await;
-                            }
-                            if let Some(last_page_number) = elementclone.last().map(|e| e.text().collect::<String>().trim().to_string()) {
-                                if let Ok(last_page_number) = last_page_number.parse::<i32>() {
-                                    if last_page_number <= max_page {
-                                        println!("Done!");
-                                        rippage(url, max_page).await;
-                                        return Err("Done");
-                                    }
-                                }
-                            }
-                        },
-                        Err(_) => {
-                            eprintln!("Failed to parse page number: '{}'", page_text);
+                if let Some(last_element) = elements.last() {
+                    if let Ok(last_page_number) = last_element.text().collect::<String>().trim().parse::<i32>() {
+                        if last_page_number > max_page {
+                            max_page = last_page_number;
+                            continue;
+                        } else {
+                            println!("Done! Max Page Number is {}", last_page_number);
+                            return Ok(last_page_number);
                         }
                     }
                 }
-            },
-            Err(err) => {
-                eprintln!("Request error: {:?}", err);
-            }    
+                return Ok(max_page);
+            }
+            Err(_) => return Err("Request error"),
         }
-        Ok(max_page)
-        }).await
+    }
 }
 
-
-async fn rippage(url: &str,maxnumber : i32)
-{ 
-    let mut pageurls: Vec<String> = vec![];
-    let count = 0;
-    for number in (0..=maxnumber).rev() {
+async fn rippage(url: &str, max_page: i32) -> Result<(), Box<dyn std::error::Error>> {
+    let mut page_urls: Vec<String> = vec![];
+    for number in (0..=max_page).rev() {
         let page_url = format!("{}&page={}", url, number);
-        pageurls.push(page_url);
+        page_urls.push(page_url);
     }
 
-    let mut imageurls: Vec<String> = vec![];
+    let mut image_urls: HashSet<String> = HashSet::new();
+    let client = reqwest::Client::new();
 
-    for pages in pageurls
-    {
-        let client = reqwest::Client::new();
-    
+    for page_url in page_urls {
         let response = client
-            .get(pages)
+            .get(&page_url)
             .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36")
             .send()
             .await;
-    
-        let images: Vec<String>;
-    
+
         match response {
             Ok(res) => {
-                let html_content = res.text().await.unwrap();
-                //println!("{}", html_content);
-
-                images = getimages(html_content);
-               // println!("{:#?}",images);
-                imageurls.extend(images);
-            },
+                let html_content = res.text().await?;
+                let images = get_images(&html_content);
+                image_urls.extend(images);
+            }
             Err(err) => {
                 eprintln!("Request error: {:?}", err);
-            }    
-        }   
+            }
+        }
     }
+
     let url_parts: Vec<&str> = url.split('?').collect();
     if url_parts.len() > 1 {
         let query_params: Vec<&str> = url_parts[1].split('&').collect();
@@ -127,66 +100,67 @@ async fn rippage(url: &str,maxnumber : i32)
             let key_value: Vec<&str> = param.split('=').collect();
             if key_value.len() > 1 && key_value[0] == "name" {
                 let folder_name = key_value[1].replace("_", " ");
-                fs::create_dir_all(&folder_name).unwrap();
-                println!("{:#?}",imageurls);
-                println!("{}",imageurls.len());
-                Box::pin(downloadimages(imageurls, folder_name)).await;
+                let path = format!("fancaps/{}", folder_name);
+                fs::create_dir_all(&path)?;
+                println!("{:#?}", image_urls);
+                println!("{}", image_urls.len());
+                download_images(image_urls, path).await?;
                 break;
             }
         }
     }
-}
 
-async fn downloadimages(imageurls: Vec<String>, folder_name: String) -> Result<(), Box<dyn std::error::Error>> {
-    let paths: Vec<String> = imageurls;
-    let client = Client::builder().build()?;
-    let fetches = futures::stream::iter(
-        paths.into_iter().map(|path| {
-            let folder_name = folder_name.clone(); // Clone the folder_name variable
-            let client = client.clone();
-            async move {
-                match client.get(&path).send().await {
-                    Ok(resp) => {
-                        match resp.bytes().await {
-                            Ok(bytes) => {
-                                let file_name = path.split('/').last().unwrap();
-                                let mut file = fs::File::create(format!("{}/{}", &folder_name, file_name)).unwrap();
-                                file.write_all(&bytes).unwrap();
-                                println!("Downloaded: {}", file_name);
-                            }
-                            Err(_) => println!("ERROR reading {}", path),
-                        }
-                    }
-                    Err(_) => println!("ERROR downloading {}", path),
-                }
-            }
-        })
-    )
-    .buffer_unordered(100)
-    .collect::<Vec<()>>();
-    fetches.await;
     Ok(())
 }
-fn getimages(html_content: String) -> Vec<String>
-{
-    let mut imageurls: Vec<String> = vec![];
 
-    let document = Html::parse_document(&html_content);
-    let imageselect = Selector::parse("img").unwrap();
+async fn download_images(image_urls: HashSet<String>, folder_name: String) -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::new();
+    let pb = ProgressBar::new(image_urls.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {human_pos}/{human_len} ({decimal_bytes_per_sec}, ETA: {eta})")?
+            .progress_chars("#>-"),
+    );
 
-    for element in document.select(&imageselect) {
-        let text = element.value().attr("src").unwrap();
-        if text.contains("moviethumbs") {
-            let replacetext = text.replace( "https://moviethumbs.fancaps.net","https://cdni.fancaps.net/file/fancaps-movieimages");
-         
-           // println!("{}", replacetext);
+    // Create a stream from the image URLs
+    let stream = stream::iter(image_urls.into_iter().map(|url| {
+        let client = client.clone();
+        let folder_name = folder_name.clone();
+        let pb = pb.clone();
 
-            imageurls.push(replacetext);
+        // Spawn a new task for each download
+        tokio::spawn(async move {
+            let response = client.get(&url).send().await?;
+            let bytes = response.bytes().await?;
+            let file_name = url.split('/').last().unwrap();
+            let file_path = format!("{}/{}", &folder_name, file_name);
+            let mut file = File::create(&file_path).await?;
+            file.write_all(&bytes).await?;
+            pb.inc(1);
+            Result::<_, Box<dyn std::error::Error + Send + Sync>>::Ok(())
+        })
+    }));
+
+    // Buffer up to 10 downloads to run concurrently
+    stream.buffer_unordered(500).collect::<Vec<_>>().await;
+
+    pb.finish_with_message("Download completed");
+    Ok(())
+}
+
+fn get_images(html_content: &str) -> Vec<String> {
+    let mut image_urls: Vec<String> = vec![];
+    let document = Html::parse_document(html_content);
+    let image_select = Selector::parse("img").unwrap();
+
+    for element in document.select(&image_select) {
+        if let Some(src) = element.value().attr("src") {
+            if src.contains("moviethumbs") {
+                let replaced_src = src.replace("https://moviethumbs.fancaps.net", "https://cdni.fancaps.net/file/fancaps-movieimages");
+                image_urls.push(replaced_src);
+            }
         }
-
-        // https://cdni.fancaps.net/file/fancaps-movieimages/554335.jpg
-        // https://moviethumbs.fancaps.net/554335.jpg
     }
 
-    imageurls
+    image_urls
 }
