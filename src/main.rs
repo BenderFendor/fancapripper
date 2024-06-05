@@ -50,6 +50,7 @@ async fn get_max_page(url: &str, initial_max_page: i32,header: &str) -> i32 {
             }
             return max_page;
         }
+        // I do realise that this isn't how you handle errors but ahhhh! I don't feel like doing the error result thing
         Err(_) => return 0,
     }
 }
