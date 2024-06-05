@@ -1,6 +1,6 @@
-use reqwest::{header::USER_AGENT, Client};
+use reqwest::{header::USER_AGENT, Client, Error};
 use tokio;
-use scraper::{Html, Selector};
+use scraper::{error, Html, Selector};
 use futures::{stream, StreamExt};
 use tokio::fs::File;
 use std::fs;
@@ -11,13 +11,13 @@ use tokio::io::AsyncWriteExt;
 #[tokio::main]
 async fn main() {
     let url: &str = "https://fancaps.net/movies/MovieImages.php?name=Howl_s_Moving_Castle&movieid=220";
-    let max_page: i32 = 500; // This should be replaced with actual logic to determine the maximum page number
+    let max_page: i32 = 500; // This should just give the max_page by guess it is less then 500
     let header: &str = "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36";
 
-    get_max_page(url, max_page,header).await;
+    get_max_page(url, max_page,header).await.unwrap();
 }
 
-async fn get_max_page(url: &str, initial_max_page: i32,header: &str) -> i32 {
+async fn get_max_page(url: &str, initial_max_page: i32,header: &str) -> Result<i32,Error> {
     let client = reqwest::Client::new();
     let mut max_page = initial_max_page;
 
@@ -44,14 +44,13 @@ async fn get_max_page(url: &str, initial_max_page: i32,header: &str) -> i32 {
                     } else {
                         println!("Done! Max Page Number is {}", last_page_number);
                         rippage(url, last_page_number, header).await.unwrap();
-                        return last_page_number;
+                        return Ok(last_page_number);
                     }
                 }
             }
-            return max_page;
+            return Ok(max_page);
         }
-        // I do realise that this isn't how you handle errors but ahhhh! I don't feel like doing the error result thing
-        Err(_) => return 0,
+        Err(err) => return Err(err),
     }
 }
 
