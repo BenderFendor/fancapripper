@@ -12,59 +12,49 @@ use tokio::io::AsyncWriteExt;
 async fn main() {
     let url: &str = "https://fancaps.net/movies/MovieImages.php?name=Howl_s_Moving_Castle&movieid=220";
     let max_page: i32 = 500; // This should be replaced with actual logic to determine the maximum page number
+    let header: &str = "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36";
 
-    match get_max_page(url, max_page).await {
-        Ok(max_page) => {
-            if let Err(e) = rippage(url, max_page).await {
-                eprintln!("Error ripping pages: {:?}", e);
-            }
-        }
-        Err(e) => {
-            eprintln!("Error getting max page: {:?}", e);
-        }
-    }
+    get_max_page(url, max_page,header).await;
 }
 
-async fn get_max_page(url: &str, initial_max_page: i32) -> Result<i32, &'static str> {
+async fn get_max_page(url: &str, initial_max_page: i32,header: &str) -> i32 {
     let client = reqwest::Client::new();
     let mut max_page = initial_max_page;
 
-    loop {
-        let page_url = format!("{}&page={}", url, max_page);
-        println!("Page url is {}", page_url);
+    let page_url = format!("{}&page={}", url, max_page);
+    println!("Page url is {}", page_url);
 
-        let response = client
-            .get(&page_url)
-            .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36")
-            .send()
-            .await;
+    let response = client
+        .get(&page_url)
+        .header(USER_AGENT,header)
+        .send()
+        .await;
 
-        match response {
-            Ok(res) => {
-                let html_content = res.text().await.map_err(|_| "Failed to read response text")?;
-                let document = Html::parse_document(&html_content);
-                let pagination_select = Selector::parse("ul.pagination li:not(:first-child):not(:last-child) a").map_err(|_| "Invalid selector")?;
+    match response {
+        Ok(res) => {
+            let html_content = res.text().await.unwrap();
+            let document = Html::parse_document(&html_content);
+            let pagination_select = Selector::parse("ul.pagination li:not(:first-child):not(:last-child) a").map_err(|_| "Invalid selector");
 
-                let elements: Vec<_> = document.select(&pagination_select).collect();
-                if let Some(last_element) = elements.last() {
-                    if let Ok(last_page_number) = last_element.text().collect::<String>().trim().parse::<i32>() {
-                        if last_page_number > max_page {
-                            max_page = last_page_number;
-                            continue;
-                        } else {
-                            println!("Done! Max Page Number is {}", last_page_number);
-                            return Ok(last_page_number);
-                        }
+            let elements: Vec<_> = document.select(&pagination_select.unwrap()).collect();
+            if let Some(last_element) = elements.last() {
+                if let Ok(last_page_number) = last_element.text().collect::<String>().trim().parse::<i32>() {
+                    if last_page_number > max_page {
+                        max_page = last_page_number;
+                    } else {
+                        println!("Done! Max Page Number is {}", last_page_number);
+                        rippage(url, last_page_number, header).await.unwrap();
+                        return last_page_number;
                     }
                 }
-                return Ok(max_page);
             }
-            Err(_) => return Err("Request error"),
+            return max_page;
         }
+        Err(_) => return 0,
     }
 }
 
-async fn rippage(url: &str, max_page: i32) -> Result<(), Box<dyn std::error::Error>> {
+async fn rippage(url: &str, max_page: i32,header: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut page_urls: Vec<String> = vec![];
     for number in (0..=max_page).rev() {
         let page_url = format!("{}&page={}", url, number);
@@ -74,10 +64,12 @@ async fn rippage(url: &str, max_page: i32) -> Result<(), Box<dyn std::error::Err
     let mut image_urls: HashSet<String> = HashSet::new();
     let client = reqwest::Client::new();
 
+    println!("Ripping Pages");
+
     for page_url in page_urls {
         let response = client
             .get(&page_url)
-            .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36")
+            .header(USER_AGENT,header)
             .send()
             .await;
 
@@ -102,8 +94,6 @@ async fn rippage(url: &str, max_page: i32) -> Result<(), Box<dyn std::error::Err
                 let folder_name = key_value[1].replace("_", " ");
                 let path = format!("fancaps/{}", folder_name);
                 fs::create_dir_all(&path)?;
-                println!("{:#?}", image_urls);
-                println!("{}", image_urls.len());
                 download_images(image_urls, path).await?;
                 break;
             }
