@@ -1,7 +1,7 @@
 use crate::fancap_scraper::{extract_image_urls, FancapImage};
 use iced::widget::{
-    button, column, container, image, mouse_area, opaque, row, scrollable, stack, text,
-    text_input, Column, Row,
+    button, column, container, image, mouse_area, opaque, row, scrollable, stack, text, text_input,
+    Column, Row,
 };
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
@@ -15,7 +15,7 @@ const ACCENT: Color = Color::from_rgb(0.0, 0.78, 0.82);
 const TEXT_PRIMARY: Color = Color::from_rgb(0.92, 0.92, 0.94);
 const TEXT_MUTED: Color = Color::from_rgb(0.55, 0.55, 0.58);
 const BORDER_COLOR: Color = Color::from_rgb(0.25, 0.25, 0.28);
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36"; 
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36";
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -273,9 +273,7 @@ impl FancapRipper {
             AppState::LoadingUrls => container(
                 column![
                     text("FETCHING...").size(24).color(ACCENT),
-                    text("Scanning page for images")
-                        .size(14)
-                        .color(TEXT_MUTED),
+                    text("Scanning page for images").size(14).color(TEXT_MUTED),
                 ]
                 .spacing(8)
                 .align_x(iced::Alignment::Center),
@@ -288,9 +286,7 @@ impl FancapRipper {
 
             AppState::Error(e) => container(
                 column![
-                    text("ERROR")
-                        .size(24)
-                        .color(Color::from_rgb(0.9, 0.3, 0.3)),
+                    text("ERROR").size(24).color(Color::from_rgb(0.9, 0.3, 0.3)),
                     text(e).size(14).color(TEXT_MUTED),
                 ]
                 .spacing(8)
@@ -364,11 +360,8 @@ impl FancapRipper {
 
                     if current_row.len() >= columns_per_row || i == cards.len() - 1 {
                         while current_row.len() < columns_per_row {
-                            current_row.push(
-                                container(text(""))
-                                    .width(Length::FillPortion(1))
-                                    .into(),
-                            );
+                            current_row
+                                .push(container(text("")).width(Length::FillPortion(1)).into());
                         }
 
                         let row_element = Row::from_vec(current_row).spacing(8).width(Length::Fill);
@@ -615,7 +608,7 @@ async fn fetch_urls(url: String) -> Result<Vec<FancapImage>, String> {
 async fn fetch_image(url: String) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::new();
     let user_agent = USER_AGENT;
-        let res = client
+    let res = client
         .get(&url)
         .header("User-Agent", user_agent)
         .send()
