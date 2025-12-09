@@ -15,6 +15,7 @@ const ACCENT: Color = Color::from_rgb(0.0, 0.78, 0.82);
 const TEXT_PRIMARY: Color = Color::from_rgb(0.92, 0.92, 0.94);
 const TEXT_MUTED: Color = Color::from_rgb(0.55, 0.55, 0.58);
 const BORDER_COLOR: Color = Color::from_rgb(0.25, 0.25, 0.28);
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36"; 
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -593,7 +594,7 @@ fn nav_button_style(status: button::Status) -> button::Style {
 
 async fn fetch_urls(url: String) -> Result<Vec<FancapImage>, String> {
     let client = reqwest::Client::new();
-    let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36";
+    let user_agent = USER_AGENT;
 
     let res = client
         .get(&url)
@@ -613,8 +614,8 @@ async fn fetch_urls(url: String) -> Result<Vec<FancapImage>, String> {
 
 async fn fetch_image(url: String) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::new();
-    let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36";
-    let res = client
+    let user_agent = USER_AGENT;
+        let res = client
         .get(&url)
         .header("User-Agent", user_agent)
         .send()
